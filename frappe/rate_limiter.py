@@ -126,7 +126,7 @@ def rate_limit(
 
 			ip = frappe.local.request_ip if ip_based is True else None
 
-			user_key = frappe.form_dict[key] if key else None
+			user_key = frappe.form_dict.get(key, "")
 
 			identity = None
 
@@ -147,7 +147,8 @@ def rate_limit(
 			value = frappe.cache.incrby(cache_key, 1)
 			if value > _limit:
 				frappe.throw(
-					_("You hit the rate limit because of too many requests. Please try after sometime.")
+					_("You hit the rate limit because of too many requests. Please try after sometime."),
+					frappe.RateLimitExceededError,
 				)
 
 			return fn(*args, **kwargs)

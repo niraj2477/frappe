@@ -8,6 +8,7 @@ from typing import Any
 from rq import get_current_job
 
 import frappe
+from frappe.database.utils import dangerously_reconnect_on_connection_abort
 from frappe.desk.form.load import get_attachments
 from frappe.desk.query_report import generate_report_result
 from frappe.model.document import Document
@@ -51,7 +52,7 @@ class PreparedReport(Document):
 	def clear_old_logs(days=30):
 		prepared_reports_to_delete = frappe.get_all(
 			"Prepared Report",
-			filters={"modified": ["<", frappe.utils.add_days(frappe.utils.now(), -days)]},
+			filters={"creation": ["<", frappe.utils.add_days(frappe.utils.now(), -days)]},
 		)
 
 		for batch in frappe.utils.create_batch(prepared_reports_to_delete, 100):
@@ -70,11 +71,12 @@ class PreparedReport(Document):
 			job.stop_job() if self.status == "Started" else job.delete()
 
 	def after_insert(self):
+		timeout = frappe.get_value("Report", self.report_name, "timeout")
 		enqueue(
 			generate_report,
 			queue="long",
 			prepared_report=self.name,
-			timeout=REPORT_TIMEOUT,
+			timeout=timeout or REPORT_TIMEOUT,
 			enqueue_after_commit=True,
 		)
 
@@ -113,8 +115,8 @@ def generate_report(prepared_report):
 
 		instance.status = "Completed"
 	except Exception:
-		instance.status = "Error"
-		instance.error_message = frappe.get_traceback(with_context=True)
+		# we need to ensure that error gets stored
+		_save_error(instance, error=frappe.get_traceback(with_context=True))
 
 	instance.report_end_time = frappe.utils.now()
 	instance.save(ignore_permissions=True)
@@ -124,6 +126,14 @@ def generate_report(prepared_report):
 		{"report_name": instance.report_name, "name": instance.name},
 		user=frappe.session.user,
 	)
+
+
+@dangerously_reconnect_on_connection_abort
+def _save_error(instance, error):
+	instance.reload()
+	instance.status = "Error"
+	instance.error_message = error
+	instance.save(ignore_permissions=True)
 
 
 def update_job_id(prepared_report):
@@ -196,7 +206,7 @@ def expire_stalled_report():
 		"Prepared Report",
 		{
 			"status": "Started",
-			"modified": ("<", add_to_date(now(), seconds=-FAILURE_THRESHOLD, as_datetime=True)),
+			"creation": ("<", add_to_date(now(), seconds=-FAILURE_THRESHOLD, as_datetime=True)),
 		},
 		{
 			"status": "Failed",

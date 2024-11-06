@@ -102,9 +102,13 @@ class Importer:
 		log_index = 0
 
 		# Do not remove rows in case of retry after an error or pending data import
-		if self.data_import.status == "Partial Success" and len(import_log) >= self.data_import.payload_count:
+		if (
+			self.data_import.status in ("Partial Success", "Error")
+			and len(import_log) >= self.data_import.payload_count
+		):
 			# remove previous failures from import log only in case of retry after partial success
 			import_log = [log for log in import_log if log.get("success")]
+			frappe.db.delete("Data Import Log", {"success": 0, "data_import": self.data_import.name})
 
 		# get successfully imported rows
 		imported_rows = []
@@ -213,13 +217,21 @@ class Importer:
 		)
 
 		# set status
-		failures = [log for log in import_log if not log.get("success")]
-		if len(failures) == total_payload_count:
-			status = "Pending"
-		elif len(failures) > 0:
+		successes = []
+		failures = []
+		for log in import_log:
+			if log.get("success"):
+				successes.append(log)
+			else:
+				failures.append(log)
+		if len(failures) >= total_payload_count and len(successes) == 0:
+			status = "Error"
+		elif len(failures) > 0 and len(successes) > 0:
 			status = "Partial Success"
-		else:
+		elif len(successes) == total_payload_count:
 			status = "Success"
+		else:
+			status = "Pending"
 
 		if self.console:
 			self.print_import_log(import_log)
@@ -1000,7 +1012,13 @@ class Column:
 				)
 		elif self.df.fieldtype in ("Date", "Time", "Datetime"):
 			# guess date/time format
+			# TODO: add possibility for user, to define the date format explicitly in the Data Import UI
+			# for example, if date column in file is in  %d-%m-%y  format -> 23-04-24.
+			# The date guesser might fail, as, this can be also parsed as %y-%m-%d, as both 23 and 24 are valid for year & for day
+			# This is an issue that cannot be handled automatically, no matter how we try, as it completely depends on the user's input.
+			# Defining an explicit value which surely recognizes
 			self.date_format = self.guess_date_format_for_column()
+
 			if not self.date_format:
 				if self.df.fieldtype == "Time":
 					self.date_format = "%H:%M:%S"

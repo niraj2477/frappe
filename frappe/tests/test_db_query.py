@@ -14,11 +14,11 @@ from frappe.handler import execute_cmd
 from frappe.model.db_query import DatabaseQuery, get_between_date_filter
 from frappe.permissions import add_user_permission, clear_user_permissions_for_doctype
 from frappe.query_builder import Column
+from frappe.tests import IntegrationTestCase
 from frappe.tests.test_query_builder import db_type_is, run_only_if
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils.testutils import add_custom_field, clear_custom_fields
 
-test_dependencies = ["User", "Blog Post", "Blog Category", "Blogger"]
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User", "Blog Post", "Blog Category", "Blogger"]
 
 
 @contextmanager
@@ -47,7 +47,7 @@ def setup_patched_blog_post():
 	yield
 
 
-class TestDBQuery(FrappeTestCase):
+class TestDBQuery(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 
@@ -267,6 +267,11 @@ class TestDBQuery(FrappeTestCase):
 			self.assertFalse(
 				result in DatabaseQuery("DocType").execute(filters={"name": ["not in", "DocType,DocField"]})
 			)
+
+	def test_string_as_field(self):
+		self.assertEqual(
+			frappe.get_all("DocType", as_list=True), frappe.get_all("DocType", fields="name", as_list=True)
+		)
 
 	def test_none_filter(self):
 		query = frappe.qb.get_query("DocType", fields="name", filters={"restrict_to_domain": None})
@@ -1104,6 +1109,15 @@ class TestDBQuery(FrappeTestCase):
 		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", (""))}, run=0))
 		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", ())}, run=0))
 
+	def test_coalesce_with_datetime_ops(self):
+		self.assertNotIn("ifnull", frappe.get_all("User", {"last_active": (">", "2022-01-01")}, run=0))
+		self.assertNotIn("ifnull", frappe.get_all("User", {"creation": ("<", "2022-01-01")}, run=0))
+		self.assertNotIn(
+			"ifnull",
+			frappe.get_all("User", {"last_active": ("between", ("2022-01-01", "2023-01-01"))}, run=0),
+		)
+		self.assertIn("ifnull", frappe.get_all("User", {"last_active": ("<", "2022-01-01")}, run=0))
+
 	def test_ambiguous_linked_tables(self):
 		from frappe.desk.reportview import get
 
@@ -1179,7 +1193,7 @@ class TestDBQuery(FrappeTestCase):
 		self.assertEqual(count[1], frappe.db.count("Language"))
 
 
-class TestReportView(FrappeTestCase):
+class TestReportView(IntegrationTestCase):
 	@run_only_if(db_type_is.MARIADB)  # TODO: postgres name casting is messed up
 	def test_get_count(self):
 		frappe.local.request = frappe._dict()
@@ -1377,6 +1391,20 @@ class TestReportView(FrappeTestCase):
 			)
 			response = execute_cmd("frappe.desk.reportview.get")
 			self.assertListEqual(response["keys"], ["published", "title", "test_field"])
+
+	def test_db_filter_not_set(self):
+		"""
+		Test if the 'not set' filter always translates correctly with/without qb under the hood.
+		"""
+		frappe.get_doc({"doctype": "ToDo", "description": "filter test"}).insert()
+		frappe.get_doc({"doctype": "ToDo", "description": "filter test", "reference_name": ""}).insert()
+
+		# `get_all` does not use QueryBuilder while `count` does. Both should return the same result.
+		# `not set` must consider empty strings and NULL values both.
+		self.assertEqual(
+			len(frappe.get_all("ToDo", filters={"reference_name": ["is", "not set"]})),
+			frappe.db.count("ToDo", {"reference_name": ["is", "not set"]}),
+		)
 
 
 def add_child_table_to_blog_post():

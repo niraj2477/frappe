@@ -43,12 +43,12 @@ jobs:
 
     services:
       mariadb:
-        image: mariadb:10.6
+        image: mariadb:11.3
         env:
-          MARIADB_ROOT_PASSWORD: travis
+          MARIADB_ROOT_PASSWORD: db_root
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3
 
     steps:
       - name: Clone
@@ -69,7 +69,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           check-latest: true
 
       - name: Add to Hosts
@@ -99,8 +99,17 @@ jobs:
       - name: Install Dependencies
         run: |
           bash ${GITHUB_WORKSPACE}/.github/helper/install_dependencies.sh
+
+      - name: Init Bench
+        run: |
           pip install frappe-bench
-          bash ${GITHUB_WORKSPACE}/.github/helper/install.sh
+          bash ${GITHUB_WORKSPACE}/.github/helper/install_bench.sh
+        env:
+          TYPE: server
+
+      - name: Init Test Site
+        run: |
+          bash ${GITHUB_WORKSPACE}/.github/helper/install_site.sh
         env:
           BEFORE: ${{ env.GITHUB_EVENT_PATH.before }}
           AFTER: ${{ env.GITHUB_EVENT_PATH.after }}

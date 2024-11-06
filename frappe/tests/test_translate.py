@@ -9,7 +9,7 @@ import frappe
 import frappe.translate
 from frappe import _, _lt
 from frappe.gettext.extractors.javascript import extract_javascript
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 from frappe.translate import (
 	MERGED_TRANSLATION_KEY,
 	USER_TRANSLATION_KEY,
@@ -17,6 +17,7 @@ from frappe.translate import (
 	extract_messages_from_javascript_code,
 	extract_messages_from_python_code,
 	get_language,
+	get_messages_for_app,
 	get_parent_language,
 	get_translation_dict_from_file,
 )
@@ -26,7 +27,7 @@ dirname = os.path.dirname(__file__)
 translation_string_file = os.path.abspath(os.path.join(dirname, "translation_test_file.txt"))
 first_lang, second_lang, third_lang, fourth_lang, fifth_lang = choices(
 	# skip "en*" since it is a default language
-	frappe.get_all("Language", pluck="name", filters=[["name", "not like", "en%"]]),
+	frappe.get_all("Language", pluck="name", filters=[["name", "not like", "en%"], ["enabled", "=", 1]]),
 	k=5,
 )
 
@@ -34,7 +35,7 @@ first_lang, second_lang, third_lang, fourth_lang, fifth_lang = choices(
 _lazy_translations = _lt("Communication")
 
 
-class TestTranslate(FrappeTestCase):
+class TestTranslate(IntegrationTestCase):
 	guest_sessions_required = (
 		"test_guest_request_language_resolution_with_cookie",
 		"test_guest_request_language_resolution_with_request_header",
@@ -155,7 +156,7 @@ class TestTranslate(FrappeTestCase):
 		site = frappe.local.site
 		frappe.destroy()
 		_("this shouldn't break")
-		frappe.init(site=site)
+		frappe.init(site)
 		frappe.connect()
 
 	def test_guest_request_language_resolution_with_request_header(self):
@@ -313,6 +314,8 @@ def verify_translation_files(app):
 	for file in translations_dir.glob("*.csv"):
 		lang = file.stem  # basename of file = lang
 		get_translation_dict_from_file(file, lang, app, throw=True)
+
+	get_messages_for_app(app)
 
 
 expected_output = [

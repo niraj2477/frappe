@@ -48,7 +48,19 @@
   "desk_settings_section",
   "mute_sounds",
   "desk_theme",
+  "code_editor_type",
   "banner_image",
+  "navigation_settings_section",
+  "search_bar",
+  "notifications",
+  "list_settings_section",
+  "list_sidebar",
+  "bulk_actions",
+  "view_switcher",
+  "form_settings_section",
+  "form_sidebar",
+  "timeline",
+  "dashboard",
   "change_password",
   "new_password",
   "logout_all_sessions",
@@ -73,6 +85,8 @@
   "user_emails",
   "workspace_section",
   "default_workspace",
+  "app_section",
+  "default_app",
   "sb2",
   "defaults",
   "sb3",
@@ -397,7 +411,7 @@
   },
   {
    "fieldname": "email_signature",
-   "fieldtype": "Small Text",
+   "fieldtype": "Text Editor",
    "label": "Email Signature",
    "no_copy": 1
   },
@@ -726,6 +740,91 @@
    "fieldname": "workspace_section",
    "fieldtype": "Section Break",
    "label": "Workspace"
+  },
+  {
+   "default": "vscode",
+   "fieldname": "code_editor_type",
+   "fieldtype": "Select",
+   "label": "Code Editor Type",
+   "options": "vscode\nvim\nemacs"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "app_section",
+   "fieldtype": "Section Break",
+   "label": "App"
+  },
+  {
+   "description": "Redirect to the selected app after login",
+   "fieldname": "default_app",
+   "fieldtype": "Select",
+   "label": "Default App"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "navigation_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Navigation Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "search_bar",
+   "fieldtype": "Check",
+   "label": "Search Bar"
+  },
+  {
+   "default": "1",
+   "fieldname": "notifications",
+   "fieldtype": "Check",
+   "label": "Notifications"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "list_settings_section",
+   "fieldtype": "Section Break",
+   "label": "List Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "list_sidebar",
+   "fieldtype": "Check",
+   "label": "Sidebar"
+  },
+  {
+   "default": "1",
+   "fieldname": "bulk_actions",
+   "fieldtype": "Check",
+   "label": "Bulk Actions"
+  },
+  {
+   "default": "1",
+   "fieldname": "view_switcher",
+   "fieldtype": "Check",
+   "label": "View Switcher"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "form_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Form Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "form_sidebar",
+   "fieldtype": "Check",
+   "label": "Sidebar"
+  },
+  {
+   "default": "1",
+   "fieldname": "timeline",
+   "fieldtype": "Check",
+   "label": "Timeline"
+  },
+  {
+   "default": "1",
+   "fieldname": "dashboard",
+   "fieldtype": "Check",
+   "label": "Dashboard"
   }
  ],
  "icon": "fa fa-user",
@@ -788,7 +887,7 @@
    "link_fieldname": "user"
   }
  ],
- "modified": "2024-03-20 17:15:19.200383",
+ "modified": "2024-09-27 11:41:13.336662",
  "modified_by": "Administrator",
  "module": "Core",
  "name": "User",
@@ -814,7 +913,7 @@
    "write": 1
   },
   {
-   "role": "All",
+   "role": "Desk User",
    "select": 1
   }
  ],
@@ -822,7 +921,7 @@
  "route": "user",
  "search_fields": "full_name",
  "show_name_in_global_search": 1,
- "sort_field": "modified",
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
  "title_field": "full_name",

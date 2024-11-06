@@ -8,7 +8,7 @@ import re
 from typing import TYPE_CHECKING, Optional, TypedDict
 
 import frappe
-from frappe import _, get_module_path
+from frappe import _, cstr, get_module_path
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.core.doctype.document_share_key.document_share_key import is_expired
 from frappe.utils import cint, escape_html, strip_html
@@ -41,13 +41,21 @@ class PrintContext(TypedDict):
 def get_context(context) -> PrintContext:
 	"""Build context for print"""
 	if not ((frappe.form_dict.doctype and frappe.form_dict.name) or frappe.form_dict.doc):
-		return {
-			"body": f"""
-				<h1>Error</h1>
-				<p>Parameters doctype and name required</p>
-				<pre>{escape_html(frappe.as_json(frappe.form_dict, indent=2))}</pre>
-				"""
-		}
+		return PrintContext(
+			print_style="",
+			comment="",
+			title="Error",
+			lang="en",
+			layout_direction="ltr",
+			doctype="",
+			name="",
+			key="",
+			body=f"""
+<h1>Error</h1>
+<p>Parameters doctype and name required</p>
+<pre>{escape_html(frappe.as_json(frappe.form_dict, indent=2))}</pre>
+""",
+		)
 
 	if frappe.form_dict.doc:
 		doc = frappe.form_dict.doc
@@ -68,7 +76,6 @@ def get_context(context) -> PrintContext:
 		doctype=frappe.form_dict.doctype, document=frappe.form_dict.name, file_type="PDF", method="Print"
 	)
 
-	print_style = None
 	body = get_rendered_template(
 		doc,
 		print_format=print_format,
@@ -84,7 +91,7 @@ def get_context(context) -> PrintContext:
 		"body": body,
 		"print_style": print_style,
 		"comment": frappe.session.user,
-		"title": frappe.utils.strip_html(doc.get_title() or doc.name),
+		"title": frappe.utils.strip_html(cstr(doc.get_title() or doc.name)),
 		"lang": frappe.local.lang,
 		"layout_direction": "rtl" if is_rtl() else "ltr",
 		"doctype": frappe.form_dict.doctype,
@@ -311,7 +318,7 @@ def get_html_and_style(
 	trigger_print: bool = False,
 	style: str | None = None,
 	settings: str | None = None,
-) -> dict[str, str]:
+) -> dict[str, str | None]:
 	"""Return `html` and `style` of print format, used in PDF etc."""
 
 	if isinstance(name, str):

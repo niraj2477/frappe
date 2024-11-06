@@ -38,8 +38,8 @@ def bootstrap_database(verbose, source_sql=None):
 
 		secho(
 			"Table 'tabDefaultValue' missing in the restored site. "
-			"This may be due to incorrect permissions or the result of a restore from a bad backup file. "
-			"Database not installed correctly.",
+			"This happens when the backup fails to restore. Please check that the file is valid\n"
+			"Do go through the above output to check the exact error message from MariaDB",
 			fg="red",
 		)
 		sys.exit(1)
@@ -73,6 +73,7 @@ def get_root_connection():
 			)
 
 		frappe.local.flags.root_connection = frappe.database.get_db(
+			socket=frappe.conf.db_socket,
 			host=frappe.conf.db_host,
 			port=frappe.conf.db_port,
 			user=frappe.flags.root_login,

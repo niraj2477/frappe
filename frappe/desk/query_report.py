@@ -14,7 +14,7 @@ from frappe.desk.reportview import clean_params, parse_json
 from frappe.model.utils import render_include
 from frappe.modules import get_module_path, scrub
 from frappe.monitor import add_data_to_monitor
-from frappe.permissions import get_role_permissions
+from frappe.permissions import get_role_permissions, has_permission
 from frappe.utils import cint, cstr, flt, format_duration, get_html_format, sbool
 
 
@@ -33,6 +33,9 @@ def get_report_doc(report_name):
 				doc.custom_columns = data.get("columns")
 				doc.custom_filters = data.get("filters")
 		doc.is_custom_report = True
+
+		# Follow whatever the custom report has set for prepared report field
+		doc.prepared_report = custom_report_doc.prepared_report
 
 	if not doc.is_permitted():
 		frappe.throw(
@@ -192,6 +195,7 @@ def run(
 	parent_field=None,
 	are_default_filters=True,
 ):
+	validate_filters_permissions(report_name, filters, user)
 	report = get_report_doc(report_name)
 	if not user:
 		user = frappe.session.user
@@ -206,18 +210,22 @@ def run(
 	if sbool(are_default_filters) and report.custom_filters:
 		filters = report.custom_filters
 
-	if report.prepared_report and not sbool(ignore_prepared_report) and not custom_columns:
-		if filters:
-			if isinstance(filters, str):
-				filters = json.loads(filters)
+	try:
+		if report.prepared_report and not sbool(ignore_prepared_report) and not custom_columns:
+			if filters:
+				if isinstance(filters, str):
+					filters = json.loads(filters)
 
-			dn = filters.pop("prepared_report_name", None)
+				dn = filters.pop("prepared_report_name", None)
+			else:
+				dn = ""
+			result = get_prepared_report_result(report, filters, dn, user)
 		else:
-			dn = ""
-		result = get_prepared_report_result(report, filters, dn, user)
-	else:
-		result = generate_report_result(report, filters, user, custom_columns, is_tree, parent_field)
-		add_data_to_monitor(report=report.reference_report or report.name)
+			result = generate_report_result(report, filters, user, custom_columns, is_tree, parent_field)
+			add_data_to_monitor(report=report.reference_report or report.name)
+	except Exception:
+		frappe.log_error("Report Error")
+		raise
 
 	result["add_total_row"] = report.add_total_row and not result.get("skip_total_row", False)
 
@@ -467,6 +475,11 @@ def add_total_row(result, columns, meta=None, is_tree=False, parent_field=None):
 			if i >= len(row):
 				continue
 			cell = row.get(fieldname) if isinstance(row, dict) else row[i]
+			if fieldtype is None:
+				if isinstance(cell, int):
+					fieldtype = "Int"
+				elif isinstance(cell, float):
+					fieldtype = "Float"
 			if fieldtype in ["Currency", "Int", "Float", "Percent", "Duration"] and flt(cell):
 				if not (is_tree and row.get(parent_field)):
 					total_row[i] = flt(total_row[i]) + flt(cell)
@@ -773,3 +786,22 @@ def get_user_match_filters(doctypes, user):
 			match_filters[dt] = filter_list
 
 	return match_filters
+
+
+def validate_filters_permissions(report_name, filters=None, user=None):
+	if not filters:
+		return
+
+	if isinstance(filters, str):
+		filters = json.loads(filters)
+
+	report = frappe.get_doc("Report", report_name)
+	for field in report.filters:
+		if field.fieldname in filters and field.fieldtype == "Link":
+			linked_doctype = field.options
+			if not has_permission(doctype=linked_doctype, doc=filters[field.fieldname], user=user):
+				frappe.throw(
+					_("You do not have permission to access {0}: {1}.").format(
+						linked_doctype, filters[field.fieldname]
+					)
+				)

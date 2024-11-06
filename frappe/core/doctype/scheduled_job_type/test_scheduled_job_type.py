@@ -4,12 +4,21 @@ from datetime import timedelta
 
 import frappe
 from frappe.core.doctype.scheduled_job_type.scheduled_job_type import sync_jobs
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime
 from frappe.utils.data import now_datetime
 
 
-class TestScheduledJobType(FrappeTestCase):
+class UnitTestScheduledJobType(UnitTestCase):
+	"""
+	Unit tests for ScheduledJobType.
+	Use this class for testing individual functions and methods.
+	"""
+
+	pass
+
+
+class TestScheduledJobType(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.rollback()
 		frappe.db.truncate("Scheduled Job Type")
@@ -78,7 +87,7 @@ class TestScheduledJobType(FrappeTestCase):
 			dict(method="frappe.social.doctype.energy_point_log.energy_point_log.send_weekly_summary"),
 		)
 		job.db_set("last_execution", "2019-01-01 00:00:00")
-		self.assertTrue(job.is_event_due(get_datetime("2019-01-06 00:00:01")))
+		self.assertTrue(job.is_event_due(get_datetime("2019-01-06 00:10:01")))  # +10 min because of jitter
 		self.assertFalse(job.is_event_due(get_datetime("2019-01-02 00:00:06")))
 		self.assertFalse(job.is_event_due(get_datetime("2019-01-05 23:59:59")))
 

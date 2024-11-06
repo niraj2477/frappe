@@ -7,7 +7,6 @@ import json
 import frappe
 from frappe import _
 from frappe.boot import get_allowed_report_names
-from frappe.config import get_modules_from_all_apps_for_user
 from frappe.model.document import Document
 from frappe.model.naming import append_number_if_name_exists
 from frappe.modules.export_file import export_to_files
@@ -20,6 +19,7 @@ from frappe.utils.dateutils import (
 	get_period,
 	get_period_beginning,
 )
+from frappe.utils.modules import get_modules_from_all_apps_for_user
 
 
 def get_permission_query_conditions(user):
@@ -260,7 +260,7 @@ def get_heatmap_chart_config(chart, filters, heatmap_year):
 	}
 
 
-def get_group_by_chart_config(chart, filters):
+def get_group_by_chart_config(chart, filters) -> dict | None:
 	aggregate_function = get_aggregate_function(chart.group_by_type)
 	value_field = chart.aggregate_function_based_on or "1"
 	group_by_field = chart.group_by_based_on
@@ -279,13 +279,22 @@ def get_group_by_chart_config(chart, filters):
 		ignore_ifnull=True,
 	)
 
+	group_by_field_field = frappe.get_meta(doctype).get_field(
+		group_by_field
+	)  # get info about @group_by_field
+
+	if data and group_by_field_field.fieldtype == "Link":  # if @group_by_field is link
+		title_field = frappe.get_meta(group_by_field_field.options)  # get title field
+		if title_field.title_field:  # if has title_field
+			for item in data:  # replace chart labels from name to title value
+				item.name = frappe.get_value(group_by_field_field.options, item.name, title_field.title_field)
+
 	if data:
 		return {
-			"labels": [item["name"] if item["name"] else "Not Specified" for item in data],
+			"labels": [item.get("name", "Not Specified") for item in data],
 			"datasets": [{"name": chart.name, "values": [item["count"] for item in data]}],
 		}
-	else:
-		return None
+	return None
 
 
 def get_aggregate_function(chart_type):
@@ -304,8 +313,8 @@ def get_result(data, timegrain, from_date, to_date, chart_type):
 		for d in result:
 			count = 0
 			while data_index < len(data) and getdate(data[data_index][0]) <= d[0]:
-				d[1] += data[data_index][1]
-				count += data[data_index][2]
+				d[1] += cint(data[data_index][1])
+				count += cint(data[data_index][2])
 				data_index += 1
 			if chart_type == "Average" and count != 0:
 				d[1] = d[1] / count

@@ -7,6 +7,7 @@ import datetime
 import json
 import re
 from collections import Counter
+from collections.abc import Sequence
 
 import frappe
 import frappe.defaults
@@ -133,6 +134,8 @@ class DatabaseQuery:
 			limit_page_length = page_length
 		if limit:
 			limit_page_length = limit
+		if as_list and not isinstance(self.fields, (Sequence | str)) and len(self.fields) > 1:
+			frappe.throw(_("Fields must be a list or tuple when as_list is enabled"))
 
 		self.filters = filters or []
 		self.or_filters = or_filters or []
@@ -666,7 +669,7 @@ class DatabaseQuery:
 
 				if wrap_grave_quotes(table) in self.query_tables:
 					permitted_child_table_fields = get_permitted_fields(
-						doctype=ch_doctype, parenttype=self.doctype
+						doctype=ch_doctype, parenttype=self.doctype, ignore_virtual=True
 					)
 					if column in permitted_child_table_fields or column in optional_fields:
 						continue
@@ -725,7 +728,7 @@ class DatabaseQuery:
 		df = df[0] if df else None
 
 		# primary key is never nullable, modified is usually indexed by default and always present
-		can_be_null = f.fieldname not in ("name", "modified")
+		can_be_null = f.fieldname not in ("name", "modified", "creation")
 
 		value = None
 
@@ -807,12 +810,20 @@ class DatabaseQuery:
 
 			if f.operator.lower() in ("previous", "next", "timespan"):
 				date_range = get_date_range(f.operator.lower(), f.value)
-				f.operator = "Between"
+				f.operator = "between"
 				f.value = date_range
 				fallback = f"'{FallBackDateTimeStr}'"
 
+			if f.operator.lower() in (">", ">=") and (
+				f.fieldname in ("creation", "modified")
+				or (df and (df.fieldtype == "Date" or df.fieldtype == "Datetime"))
+			):
+				# Null values can never be greater than any non-null value
+				can_be_null = False
+
 			if f.operator in (">", "<", ">=", "<=") and (f.fieldname in ("creation", "modified")):
 				value = cstr(f.value)
+				can_be_null = False
 				fallback = f"'{FallBackDateTimeStr}'"
 
 			elif f.operator.lower() in ("between") and (
@@ -820,6 +831,17 @@ class DatabaseQuery:
 				or (df and (df.fieldtype == "Date" or df.fieldtype == "Datetime"))
 			):
 				escape = False
+				# Between operator never needs to check for null
+				# Explanation: Consider SQL -> `COLUMN between X and Y`
+				# Actual computation:
+				#     for row in rows:
+				#     if Y > row.COLUMN > X:
+				#         yield row
+
+				# Since Y and X can't be null, null value in column will never match filter, so
+				# coalesce is extra cost that prevents index usage
+				can_be_null = False
+
 				value = get_between_date_filter(f.value, df)
 				fallback = f"'{FallBackDateTimeStr}'"
 
@@ -1031,20 +1053,17 @@ class DatabaseQuery:
 			self._fetch_shared_documents = True
 			self.match_filters.append(match_filters)
 
-	def get_permission_query_conditions(self):
+	def get_permission_query_conditions(self) -> str:
 		conditions = []
-		condition_methods = frappe.get_hooks("permission_query_conditions", {}).get(self.doctype, [])
-		if condition_methods:
-			for method in condition_methods:
-				c = frappe.call(frappe.get_attr(method), self.user)
-				if c:
-					conditions.append(c)
+		hooks = frappe.get_hooks("permission_query_conditions", {})
+		condition_methods = hooks.get(self.doctype, []) + hooks.get("*", [])
+		for method in condition_methods:
+			if c := frappe.call(frappe.get_attr(method), self.user, doctype=self.doctype):
+				conditions.append(c)
 
-		permision_script_name = get_server_script_map().get("permission_query", {}).get(self.doctype)
-		if permision_script_name:
-			script = frappe.get_doc("Server Script", permision_script_name)
-			condition = script.get_permission_query_conditions(self.user)
-			if condition:
+		if permission_script_name := get_server_script_map().get("permission_query", {}).get(self.doctype):
+			script = frappe.get_doc("Server Script", permission_script_name)
+			if condition := script.get_permission_query_conditions(self.user):
 				conditions.append(condition)
 
 		return " and ".join(conditions) if conditions else ""
@@ -1073,20 +1092,20 @@ class DatabaseQuery:
 				if self.doctype_meta.sort_field and "," in self.doctype_meta.sort_field:
 					# multiple sort given in doctype definition
 					# Example:
-					# `idx desc, modified desc`
+					# `idx desc, creation desc`
 					# will covert to
-					# `tabItem`.`idx` desc, `tabItem`.`modified` desc
+					# `tabItem`.`idx` desc, `tabItem`.`creation` desc
 					args.order_by = ", ".join(
 						f"`tab{self.doctype}`.`{f_split[0].strip()}` {f_split[1].strip()}"
 						for f in self.doctype_meta.sort_field.split(",")
 						if (f_split := f.split(maxsplit=2))
 					)
 				else:
-					sort_field = self.doctype_meta.sort_field or "modified"
+					sort_field = self.doctype_meta.sort_field or "creation"
 					sort_order = (self.doctype_meta.sort_field and self.doctype_meta.sort_order) or "desc"
 					if self.order_by:
 						args.order_by = (
-							f"`tab{self.doctype}`.`{sort_field or 'modified'}` {sort_order or 'desc'}"
+							f"`tab{self.doctype}`.`{sort_field or 'creation'}` {sort_order or 'desc'}"
 						)
 
 	def validate_order_by_and_group_by(self, parameters: str):
@@ -1203,9 +1222,9 @@ def get_order_by(doctype, meta):
 	if meta.sort_field and "," in meta.sort_field:
 		# multiple sort given in doctype definition
 		# Example:
-		# `idx desc, modified desc`
+		# `idx desc, creation desc`
 		# will covert to
-		# `tabItem`.`idx` desc, `tabItem`.`modified` desc
+		# `tabItem`.`idx` desc, `tabItem`.`creation` desc
 		order_by = ", ".join(
 			f"`tab{doctype}`.`{f_split[0].strip()}` {f_split[1].strip()}"
 			for f in meta.sort_field.split(",")
@@ -1213,13 +1232,9 @@ def get_order_by(doctype, meta):
 		)
 
 	else:
-		sort_field = meta.sort_field or "modified"
+		sort_field = meta.sort_field or "creation"
 		sort_order = (meta.sort_field and meta.sort_order) or "desc"
-		order_by = f"`tab{doctype}`.`{sort_field or 'modified'}` {sort_order or 'desc'}"
-
-	# draft docs always on top
-	if meta.is_submittable:
-		order_by = f"`tab{doctype}`.docstatus asc, {order_by}"
+		order_by = f"`tab{doctype}`.`{sort_field}` {sort_order}"
 
 	return order_by
 
