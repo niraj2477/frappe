@@ -265,7 +265,8 @@
    "label": "Gender",
    "oldfieldname": "gender",
    "oldfieldtype": "Select",
-   "options": "Gender"
+   "options": "Gender",
+   "permlevel": 1
   },
   {
    "fieldname": "phone",
@@ -885,7 +886,7 @@
   }
  ],
  "make_attachments_public": 1,
- "modified": "2025-03-17 11:29:39.254304",
+ "modified": "2025-05-12 16:40:34.898968",
  "modified_by": "Administrator",
  "module": "Core",
  "name": "User",
